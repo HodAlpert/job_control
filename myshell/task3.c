@@ -10,12 +10,13 @@
 #include "job_control.h"
 
 pid_t parent;
+pid_t lastProccess;
 char pathName[PATH_MAX];
 pid_t execute(cmdLine *pCmdLine,int* fdin, job** jobList, job*currentJob, struct termios* shellAttr);
 
 void handleSignal(int signal){
     char* nameOfSignal=strsignal(signal);
-    dprintf(STDIN_FILENO,"signal %s was ignored\n",nameOfSignal);
+    dprintf(STDIN_FILENO,"signal %s was ignored in group %d\n",nameOfSignal,getpgid(getpid()));
 }
 
 
@@ -45,6 +46,7 @@ void childSignalSetter() {
 }
 
 void childProccess(cmdLine *pCmdLine, int* fdout){
+    lastProccess = getpgid(getpid());
     childSignalSetter();
     if (pCmdLine->inputRedirect!=NULL) {
         assert(close(0)!=-1);
@@ -68,7 +70,9 @@ void ParentProccess(int childId, cmdLine *pCmdLine,int* fdout){
     }
     if (parent==getpid()&&pCmdLine->blocking=='\1') {
         int status;
-        while (waitpid(-getpgid(childId), &status, WNOHANG)!=-1){
+        pid_t temp;
+        if ((temp = waitpid(-getpgid(childId), &status, WUNTRACED))!=-1){
+
         }
     }
 }
@@ -107,7 +111,6 @@ void assignHandlers(){
     sa.sa_handler=handleSignal;
     assert(sigaction(SIGQUIT,&sa,NULL)!=-1);
     assert(sigaction(SIGCHLD,&sa,NULL)!=-1);
-    assert(sigaction(SIGTSTP,&sa,NULL)!=-1);
 }
 
 void signalInit() {
@@ -120,7 +123,7 @@ void signalInit() {
 
 int main() {
     signalInit();
-    job** job_list = calloc(1, sizeof(job_list));
+    job** job_list = calloc(1, sizeof(long));
     *job_list=NULL;
     int i=1;
     struct termios* attr = malloc(sizeof(struct termios));

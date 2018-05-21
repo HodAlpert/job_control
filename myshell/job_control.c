@@ -214,8 +214,7 @@ void run_job_in_foreground (job** job_list, job *j, int cont, struct termios* sh
 
             }
             assert(kill(-j->pgid,SIGCONT)!=-1);
-            while (waitpid(-j->pgid, &status, WNOHANG)!=-1){
-            }
+            assert(waitpid(-j->pgid, &status, WUNTRACED)!=-1);
             if(WIFSTOPPED(status)){
                 j->status=SUSPENDED;
             }
