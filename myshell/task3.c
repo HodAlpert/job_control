@@ -121,14 +121,12 @@ void assignHandlers(){
     assert(sigaction(SIGCHLD,&sa,NULL)!=-1);
     sa.sa_handler=handleSignal2;
     assert(sigaction(SIGTSTP,&sa,NULL)!=-1);
-//    assert(sigaction(SIGTTOU,&sa,NULL)!=-1);
-//    assert(sigaction(SIGTTIN,&sa,NULL)!=-1);
+
 }
 
 void signalInit() {
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
-//    signal(SIGTSTP, SIG_IGN);
     assignHandlers();
     setpgid(getpid(),getpid());
 }
