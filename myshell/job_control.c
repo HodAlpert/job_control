@@ -122,8 +122,6 @@ job* initialize_job(char* cmd){
     strcpy(createdJob->cmd,cmd);
     createdJob->tmodes = malloc(sizeof(struct termios));
     createdJob->next=NULL;
-    createdJob->pgid;
-    createdJob->status;
     return createdJob;
 }
 
@@ -134,7 +132,7 @@ job* initialize_job(char* cmd){
 **/
 job* find_job_by_index(job* job_list, int idx){
     if(job_list==NULL){
-        dprintf(STDERR_FILENO,"find job by index: no job of index %d was found",idx);
+        dprintf(STDERR_FILENO,"find job by index: no job of index %d was found\n",idx);
         return NULL;
     }
     job* tmp = job_list;
@@ -147,7 +145,7 @@ job* find_job_by_index(job* job_list, int idx){
         tmp = next;
     }
         while(next != NULL);
-    dprintf(STDERR_FILENO,"find job by index: no job of index %d was found",idx);
+    dprintf(STDERR_FILENO,"find job by index: no job of index %d was found\n",idx);
     return NULL;
 }
 
@@ -159,11 +157,15 @@ job* find_job_by_index(job* job_list, int idx){
 
 pid_t checkIfDone(job *jobToCheck){
     int status;
-    pid_t result =waitpid(-jobToCheck->pgid, &status, WNOHANG);
+    pid_t result =waitpid(-jobToCheck->pgid, &status, WNOHANG|WUNTRACED);
     switch (result){
         case -1://procces not exist
+            jobToCheck->status=DONE;
             break;
         case 0://still running
+            if (WIFSIGNALED(status)) {
+                jobToCheck->status=SUSPENDED;
+            }
             break;
         default://done
             jobToCheck->status=DONE;
@@ -197,42 +199,43 @@ void update_job_list(job **job_list, int remove_done_jobs){
 **/
 
 void run_job_in_foreground (job** job_list, job *j, int cont, struct termios* shell_tmodes, pid_t shell_pgid){
-    int status;
-    pid_t DoneTest;
-    switch(DoneTest = waitpid(-j->pgid, &status, WNOHANG)){
-        case -1:// job is done- print and remove
-            j->status=DONE;
-            printf("[%d]\t %s \t\t %s", j->idx, status_to_str(j->status),j -> cmd);
-            if (j -> cmd[strlen(j -> cmd)-1]  != '\n')
-                printf("\n");
-            remove_job(job_list,j);
-            break;
-        case 0:
-            tcsetpgrp (STDIN_FILENO, j->pgid);
-            if(cont==1&&j->status==SUSPENDED){
-                tcsetattr (STDIN_FILENO, TCSADRAIN, j->tmodes);
+    if(j==NULL){
+        return;
+    }
+    if(cont) {
+        int status;
+        pid_t DoneTest;
+        switch (DoneTest = waitpid(-j->pgid, &status, WNOHANG)) {
+            case -1:// job is done- print and remove
+                j->status = DONE;
+                printf("[%d]\t %s \t\t %s", j->idx, status_to_str(j->status), j->cmd);
+                if (j->cmd[strlen(j->cmd) - 1] != '\n')
+                    printf("\n");
+                remove_job(job_list, j);
+                break;
+            case 0:
+                tcsetpgrp(STDIN_FILENO, j->pgid);
+                if (cont == 1 && j->status == SUSPENDED) {
+                    tcsetattr(STDIN_FILENO, TCSADRAIN, j->tmodes);
 
-            }
-            assert(kill(-j->pgid,SIGCONT)!=-1);
-            assert(waitpid(-j->pgid, &status, WUNTRACED)!=-1);
-            if(WIFSTOPPED(status)){
-                j->status=SUSPENDED;
-            }
-            else if(WIFSIGNALED(status)&&WTERMSIG(status)==SIGINT){
-                j->status=DONE;
-            }
-
-            break;
-        default:
-            printf("testtt11123");
-            fflush(STDIN_FILENO);
-            sync();
-            j->status=DONE;
-            printf("[%d]\t %s \t\t %s", j->idx, status_to_str(j->status),j -> cmd);
-            if (j -> cmd[strlen(j -> cmd)-1]  != '\n')
-                printf("\n");
-            remove_job(job_list,j);
-            break;
+                }
+                assert(kill(-j->pgid, SIGCONT) != -1);
+                if (waitpid(-j->pgid, &status, WUNTRACED) != -1) {
+                    if (WIFSTOPPED(status)||WIFSIGNALED(status)) {
+                        j->status = SUSPENDED;
+                    } else if (WIFSIGNALED(status) && WTERMSIG(status) == SIGINT) {
+                        j->status = DONE;
+                    }
+                }
+                break;
+            default://job is done
+                j->status = DONE;
+                printf("[%d]\t %s \t\t %s", j->idx, status_to_str(j->status), j->cmd);
+                if (j->cmd[strlen(j->cmd) - 1] != '\n')
+                    printf("\n");
+                remove_job(job_list, j);
+                return;
+        }
     }
     tcsetpgrp (STDIN_FILENO,shell_pgid);
     tcgetattr(STDIN_FILENO,j->tmodes);
@@ -247,5 +250,8 @@ void run_job_in_foreground (job** job_list, job *j, int cont, struct termios* sh
 **/
 
 void run_job_in_background (job *j, int cont){
-
+    j->status=RUNNING;
+    if(cont){
+        kill(-j->pgid,SIGCONT);
+    }
 }
